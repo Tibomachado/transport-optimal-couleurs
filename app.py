@@ -26,13 +26,15 @@ IMAGES_CIBLES = {
 def charger_image_depuis_chemin(chemin, taille=TAILLE_IMAGE):
     image = Image.open(chemin).convert("RGB")
     image = image.resize((taille, taille))
-    return np.array(image, dtype=float) / 255.0, image
+    tableau = np.array(image, dtype=float) / 255.0
+    return tableau, image
 
 
 def charger_image_depuis_upload(fichier, taille=TAILLE_IMAGE):
     image = Image.open(fichier).convert("RGB")
     image = image.resize((taille, taille))
-    return np.array(image, dtype=float) / 255.0, image
+    tableau = np.array(image, dtype=float) / 255.0
+    return tableau, image
 
 
 def extraire_palette(image, k):
@@ -66,7 +68,7 @@ def transfert_couleurs(source, cible, k, epsilon, normaliser_cout=True):
         C,
         epsilon,
         numItermax=2000,
-        stopThr=1e-7
+        stopThr=1e-7,
     )
 
     nouvelles_couleurs = (gamma @ couleurs_cible) / poids_source[:, None]
@@ -77,24 +79,13 @@ def transfert_couleurs(source, cible, k, epsilon, normaliser_cout=True):
 
     temps = time.perf_counter() - debut
 
-    return image_resultat, gamma, temps
+    return image_resultat, temps
 
 
 def convertir_en_image(tableau):
     tableau = np.clip(tableau, 0, 1)
     tableau_uint8 = (tableau * 255).astype(np.uint8)
     return Image.fromarray(tableau_uint8)
-
-
-def image_gamma(gamma):
-    if gamma.max() > 0:
-        gamma = gamma / gamma.max()
-
-    gamma_uint8 = (gamma * 255).astype(np.uint8)
-    image = Image.fromarray(gamma_uint8)
-    image = image.resize((256, 256), Image.Resampling.NEAREST)
-
-    return image
 
 
 def image_vers_buffer(image):
@@ -106,20 +97,21 @@ def image_vers_buffer(image):
 
 st.set_page_config(
     page_title="Transport optimal - Transfert de couleurs",
-    layout="wide"
+    layout="wide",
 )
 
 st.title("Transport optimal : transfert de couleurs")
+
 st.write(
     "Cette application applique un transfert de couleurs entre deux images "
-    "avec K-Means, Sinkhorn et une projection barycentrique."
+    "à l'aide de K-Means, de l'algorithme de Sinkhorn et d'une projection barycentrique."
 )
 
 st.sidebar.header("Paramètres")
 
 mode = st.sidebar.radio(
     "Choix des images",
-    ["Utiliser les images du projet", "Importer mes propres images"]
+    ["Utiliser les images du projet", "Importer mes propres images"],
 )
 
 k = st.sidebar.slider(
@@ -127,23 +119,23 @@ k = st.sidebar.slider(
     min_value=8,
     max_value=256,
     value=96,
-    step=8
+    step=8,
 )
 
 epsilon = st.sidebar.select_slider(
     "Paramètre entropique ε",
     options=[0.001, 0.003, 0.005, 0.01, 0.02, 0.03, 0.05, 0.1, 0.2, 0.5],
-    value=0.03
+    value=0.03,
 )
 
 normaliser_cout = st.sidebar.checkbox(
     "Normaliser la matrice de coût",
-    value=True
+    value=True,
 )
 
 st.sidebar.info(
-    "Petit ε : transport plus concentré, mais calcul plus fragile.\n\n"
-    "Grand ε : transport plus diffus, couleurs plus moyennées."
+    "Petit ε : résultat plus marqué, mais calcul plus fragile.\n\n"
+    "Grand ε : résultat plus doux, couleurs plus moyennées."
 )
 
 source = None
@@ -154,13 +146,13 @@ cible_pil = None
 if mode == "Utiliser les images du projet":
     choix_source = st.sidebar.selectbox(
         "Image source",
-        list(IMAGES_SOURCES.keys())
+        list(IMAGES_SOURCES.keys()),
     )
 
     choix_cible = st.sidebar.selectbox(
         "Image cible",
         list(IMAGES_CIBLES.keys()),
-        index=1
+        index=1,
     )
 
     chemin_source = Path(IMAGES_SOURCES[choix_source])
@@ -179,14 +171,14 @@ else:
         fichier_source = st.file_uploader(
             "Image source",
             type=["png", "jpg", "jpeg"],
-            key="source"
+            key="source",
         )
 
     with col_upload_2:
         fichier_cible = st.file_uploader(
             "Image cible",
             type=["png", "jpg", "jpeg"],
-            key="cible"
+            key="cible",
         )
 
     if fichier_source is not None and fichier_cible is not None:
@@ -208,21 +200,20 @@ if source is not None and cible is not None:
     lancer = st.button("Lancer le transfert de couleurs")
 
     if lancer:
-        with st.spinner("Calcul du transport optimal en cours..."):
-            resultat, gamma, temps = transfert_couleurs(
+        with st.spinner("Calcul du transfert de couleurs en cours..."):
+            resultat, temps = transfert_couleurs(
                 source,
                 cible,
                 k,
                 epsilon,
-                normaliser_cout
+                normaliser_cout,
             )
 
         resultat_pil = convertir_en_image(resultat)
-        gamma_pil = image_gamma(gamma)
 
         st.success(f"Calcul terminé en {temps:.2f} secondes")
 
-        st.subheader("Résultat du transfert")
+        st.subheader("Résultat")
 
         col3, col4, col5 = st.columns(3)
 
@@ -235,19 +226,10 @@ if source is not None and cible is not None:
         with col5:
             st.image(resultat_pil, caption="Image recolorée", use_container_width=True)
 
-        st.subheader("Matrice de transport")
-
-        st.image(
-            gamma_pil,
-            caption="Visualisation de la matrice γ. Les zones claires indiquent les transports de masse les plus importants.",
-            width=300
-        )
-
         st.write("Paramètres utilisés :")
         st.write(f"- k = {k}")
         st.write(f"- ε = {epsilon}")
         st.write(f"- normalisation de la matrice de coût = {normaliser_cout}")
-        st.write(f"- taille de la matrice γ = {gamma.shape[0]} × {gamma.shape[1]}")
 
         buffer = image_vers_buffer(resultat_pil)
 
@@ -255,7 +237,7 @@ if source is not None and cible is not None:
             label="Télécharger l'image résultat",
             data=buffer,
             file_name=f"resultat_k{k}_epsilon{str(epsilon).replace('.', '')}.png",
-            mime="image/png"
+            mime="image/png",
         )
 
 else:
